@@ -86,9 +86,8 @@ namespace JsonMinifier
         };
 
         // Settings for different optimization features
-        private static bool enableNameReplacement = true;
+        private static bool enableNameIdReplacement = true;
         private static bool enablePrecisionReduction = true;
-        private static bool enableIdReplacement = true;
         private static bool showNameMappings = false;
         private static bool useFormattedOutput = false;
         private static int precisionDigits = 6;
@@ -122,12 +121,9 @@ namespace JsonMinifier
                 }
 
                 // Replace names and IDs recursively (if enabled)
-                if (enableNameReplacement || enableIdReplacement)
+                if (enableNameIdReplacement)
                 {
-                    if (enableNameReplacement)
-                        Console.WriteLine("Replacing names with short identifiers...");
-                    if (enableIdReplacement)
-                        Console.WriteLine("Replacing IDs with short identifiers...");
+                    Console.WriteLine("Replacing names and IDs with short identifiers...");
                     
                     // Two-pass approach:
                     // Pass 1: Collect all names and IDs to build the complete mapping
@@ -165,14 +161,9 @@ namespace JsonMinifier
 
                 Console.WriteLine($"Minified JSON saved to: {outputFile}");
 
-                if (enableNameReplacement || enableIdReplacement)
+                if (enableNameIdReplacement)
                 {
-                    if (enableNameReplacement && enableIdReplacement)
-                        Console.WriteLine($"Replaced {nameMap.Count} unique names and IDs");
-                    else if (enableNameReplacement)
-                        Console.WriteLine($"Replaced {nameMap.Count} unique names");
-                    else
-                        Console.WriteLine($"Replaced {nameMap.Count} unique IDs");
+                    Console.WriteLine($"Replaced {nameMap.Count} unique names and IDs");
                 }
                 Console.WriteLine($"Original size: {new FileInfo(inputFile).Length:N0} bytes");
                 Console.WriteLine($"Minified size: {new FileInfo(outputFile).Length:N0} bytes");
@@ -183,11 +174,9 @@ namespace JsonMinifier
                 Console.WriteLine($"Size reduction: {reductionPercent:F1}%");
 
                 // Optionally print the name/ID mappings
-                if (showNameMappings && (enableNameReplacement || enableIdReplacement) && nameMap.Count > 0)
+                if (showNameMappings && enableNameIdReplacement && nameMap.Count > 0)
                 {
-                    string mappingType = (enableNameReplacement && enableIdReplacement) ? "Name/ID mappings" :
-                                       enableNameReplacement ? "Name mappings" : "ID mappings";
-                    Console.WriteLine($"\n{mappingType}:");
+                    Console.WriteLine($"\nName/ID mappings:");
                     foreach (var kvp in nameMap)
                     {
                         Console.WriteLine($"  {kvp.Key} -> {kvp.Value}");
@@ -243,19 +232,14 @@ namespace JsonMinifier
                         Environment.Exit(0);
                         break;
 
-                    case "--no-names":
-                        enableNameReplacement = false;
-                        Console.WriteLine("Name replacement disabled");
+                    case "--no-rename":
+                        enableNameIdReplacement = false;
+                        Console.WriteLine("Name and ID replacement disabled");
                         break;
 
                     case "--no-precision":
                         enablePrecisionReduction = false;
                         Console.WriteLine("Precision reduction disabled");
-                        break;
-
-                    case "--no-ids":
-                        enableIdReplacement = false;
-                        Console.WriteLine("ID replacement disabled");
                         break;
 
                     case "--show-mappings":
@@ -347,17 +331,16 @@ namespace JsonMinifier
             Console.WriteLine("  -h, --help           Show this help message");
             Console.WriteLine("  -i, --input FILE     Input JSON file (default: pl_badwater.spatial.json)");
             Console.WriteLine("  --out FILE           Output JSON file (default: auto-generated from input filename)");
-            Console.WriteLine("  --no-names           Disable name replacement with short identifiers");
-            Console.WriteLine("  --no-ids             Disable ID replacement with short identifiers");
+            Console.WriteLine("  --no-rename          Disable name and ID replacement with short identifiers");
             Console.WriteLine("  --no-precision       Disable numeric precision reduction");
             Console.WriteLine("  --precision DIGITS   Set precision digits (1-15, default: 6)");
-            Console.WriteLine("  --show-mappings      Show name mappings in output");
+            Console.WriteLine("  --show-mappings      Show name/ID mappings in output");
             Console.WriteLine("  --formatted, --pretty Output with whitespace and indentation (default: minified)");
             Console.WriteLine();
             Console.WriteLine("Examples:");
             Console.WriteLine("  JsonMinifier input.json");
             Console.WriteLine("  JsonMinifier --out custom-output.json input.json");
-            Console.WriteLine("  JsonMinifier --no-names --precision 3 input.json");
+            Console.WriteLine("  JsonMinifier --no-rename --precision 3 input.json");
             Console.WriteLine("  JsonMinifier --formatted --show-mappings input.json");
             Console.WriteLine("  JsonMinifier --show-mappings --precision 7 -i input.json --out output.json");
         }
@@ -374,7 +357,7 @@ namespace JsonMinifier
                     foreach (var property in obj)
                     {
                         // Collect names from "name" property values
-                        if (property.Key == "name" && property.Value is JsonValue jsonValue && enableNameReplacement)
+                        if (property.Key == "name" && property.Value is JsonValue jsonValue && enableNameIdReplacement)
                         {
                             if (jsonValue.TryGetValue<string>(out string? nameValue) && nameValue != null)
                             {
@@ -382,7 +365,7 @@ namespace JsonMinifier
                             }
                         }
                         // Collect IDs from "id" property values
-                        else if (property.Key == "id" && property.Value is JsonValue idValue && enableIdReplacement)
+                        else if (property.Key == "id" && property.Value is JsonValue idValue && enableNameIdReplacement)
                         {
                             if (idValue.TryGetValue<string>(out string? idValueString) && idValueString != null)
                             {
@@ -416,7 +399,7 @@ namespace JsonMinifier
                     foreach (var property in obj)
                     {
                         // Replace names in "name" property values
-                        if (property.Key == "name" && property.Value is JsonValue jsonValue && enableNameReplacement)
+                        if (property.Key == "name" && property.Value is JsonValue jsonValue && enableNameIdReplacement)
                         {
                             if (jsonValue.TryGetValue<string>(out string? nameValue) && nameValue != null)
                             {
@@ -437,7 +420,7 @@ namespace JsonMinifier
                             }
                         }
                         // Replace IDs in "id" property values
-                        else if (property.Key == "id" && property.Value is JsonValue idValue && enableIdReplacement)
+                        else if (property.Key == "id" && property.Value is JsonValue idValue && enableNameIdReplacement)
                         {
                             if (idValue.TryGetValue<string>(out string? idValueString) && idValueString != null)
                             {
