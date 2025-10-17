@@ -32,9 +32,57 @@ namespace JsonMinifier
         // Names that should never be replaced (important structural/asset names)
         private static readonly HashSet<string> excludedNames = new HashSet<string>
         {
-            "Static",
-            "MP_Limestone_Terrain",
-            "MP_Limestone_Assets"
+            "Static"
+        };
+
+        // Check if a name/ID should be excluded from replacement
+        private static bool IsExcluded(string nameOrId)
+        {
+            if (string.IsNullOrEmpty(nameOrId))
+                return true;
+
+            // Exclude anything in the Static/ tree (IDs starting with "Static/")
+            if (nameOrId.StartsWith("Static/"))
+                return true;
+
+            // Exclude exact matches from the exclusion list
+            if (excludedNames.Contains(nameOrId))
+                return true;
+
+            return false;
+        }
+
+        // Properties that contain single ID references to other objects
+        private static readonly HashSet<string> singleIdReferenceProperties = new HashSet<string>
+        {
+            "HQArea",
+            "CombatVolume",
+            "CaptureArea",
+            "Area",
+            "SurroundingCombatArea",
+            "ExclusionAreaTeam1",
+            "ExclusionAreaTeam2",
+            "ExclusionAreaTeam1_OBB",
+            "ExclusionAreaTeam2_OBB",
+            "DestructionArea",
+            "MapDetailRenderArea",
+            "SectorArea",
+            "RetreatArea",
+            "RetreatFromArea",
+            "AdvanceFromArea",
+            "AdvanceToArea"
+        };
+
+        // Properties that contain arrays of ID references to other objects
+        private static readonly HashSet<string> arrayIdReferenceProperties = new HashSet<string>
+        {
+            "InfantrySpawns",
+            "ForwardSpawns",
+            "InfantrySpawnPoints_Team1",
+            "InfantrySpawnPoints_Team2",
+            "SpawnPoints",
+            "CapturePoints",
+            "MCOMs"
         };
 
         // Settings for different optimization features
@@ -80,15 +128,24 @@ namespace JsonMinifier
                         Console.WriteLine("Replacing names with short identifiers...");
                     if (enableIdReplacement)
                         Console.WriteLine("Replacing IDs with short identifiers...");
-                    ReplaceNamesRecursively(rootNode);
+                    
+                    // Two-pass approach:
+                    // Pass 1: Collect all names and IDs to build the complete mapping
+                    CollectNamesAndIds(rootNode);
+                    
+                    // Pass 2: Replace all references using the complete mapping
+                    ReplaceReferencesRecursively(rootNode);
                 }
 
                 // Serialize with configurable formatting
-                // Serialize using the appropriate context based on formatting preference
                 string minifiedJson;
                 if (useFormattedOutput)
                 {
-                    minifiedJson = JsonSerializer.Serialize(rootNode, JsonFormattedContext.Default.JsonNode);
+                    // Serialize with formatted context (default 2-space indentation)
+                    string tempJson = JsonSerializer.Serialize(rootNode, JsonFormattedContext.Default.JsonNode);
+                    
+                    // Convert 2-space indentation to 4-space indentation
+                    minifiedJson = ConvertToFourSpaceIndentation(tempJson);
                 }
                 else
                 {
@@ -142,6 +199,36 @@ namespace JsonMinifier
                 Console.WriteLine($"Error: {ex.Message}");
                 Environment.Exit(1);
             }
+        }
+
+        private static string ConvertToFourSpaceIndentation(string json)
+        {
+            var lines = json.Split('\n');
+            
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                int leadingSpaces = 0;
+                
+                // Count leading spaces
+                for (int j = 0; j < line.Length; j++)
+                {
+                    if (line[j] == ' ')
+                        leadingSpaces++;
+                    else
+                        break;
+                }
+                
+                // If we have leading spaces that are multiples of 2, convert to multiples of 4
+                if (leadingSpaces > 0 && leadingSpaces % 2 == 0)
+                {
+                    int indentLevel = leadingSpaces / 2;
+                    string newIndent = new string(' ', indentLevel * 4);
+                    lines[i] = newIndent + line.Substring(leadingSpaces);
+                }
+            }
+            
+            return string.Join('\n', lines);
         }
 
         private static void ParseArguments(string[] args, ref string inputFile, ref string? outputFile)
@@ -275,7 +362,8 @@ namespace JsonMinifier
             Console.WriteLine("  JsonMinifier --show-mappings --precision 7 -i input.json --out output.json");
         }
 
-        private static void ReplaceNamesRecursively(JsonNode? node)
+        // Pass 1: Collect all names and IDs to build the complete mapping
+        private static void CollectNamesAndIds(JsonNode? node)
         {
             if (node == null)
                 return;
@@ -283,9 +371,48 @@ namespace JsonMinifier
             switch (node)
             {
                 case JsonObject obj:
-                    // Handle objects
-                    var propertiesToUpdate = new List<(string oldKey, string newKey, JsonNode value)>();
+                    foreach (var property in obj)
+                    {
+                        // Collect names from "name" property values
+                        if (property.Key == "name" && property.Value is JsonValue jsonValue && enableNameReplacement)
+                        {
+                            if (jsonValue.TryGetValue<string>(out string? nameValue) && nameValue != null)
+                            {
+                                GetOrCreateShortName(nameValue);
+                            }
+                        }
+                        // Collect IDs from "id" property values
+                        else if (property.Key == "id" && property.Value is JsonValue idValue && enableIdReplacement)
+                        {
+                            if (idValue.TryGetValue<string>(out string? idValueString) && idValueString != null)
+                            {
+                                GetOrCreateShortId(idValueString);
+                            }
+                        }
+                        
+                        // Recursively collect from nested structures
+                        CollectNamesAndIds(property.Value);
+                    }
+                    break;
 
+                case JsonArray array:
+                    for (int i = 0; i < array.Count; i++)
+                    {
+                        CollectNamesAndIds(array[i]);
+                    }
+                    break;
+            }
+        }
+
+        // Pass 2: Replace all references using the complete mapping
+        private static void ReplaceReferencesRecursively(JsonNode? node)
+        {
+            if (node == null)
+                return;
+
+            switch (node)
+            {
+                case JsonObject obj:
                     foreach (var property in obj)
                     {
                         // Replace names in "name" property values
@@ -293,58 +420,78 @@ namespace JsonMinifier
                         {
                             if (jsonValue.TryGetValue<string>(out string? nameValue) && nameValue != null)
                             {
-                                string newName = GetOrCreateShortName(nameValue);
-                                obj["name"] = newName;
+                                // Check if this object has a Static/ ID - if so, don't rename its name
+                                bool isStaticObject = false;
+                                if (obj.TryGetPropertyValue("id", out JsonNode? idNode) && idNode is JsonValue objectIdValue)
+                                {
+                                    if (objectIdValue.TryGetValue<string>(out string? idString) && idString != null)
+                                    {
+                                        isStaticObject = idString.StartsWith("Static/");
+                                    }
+                                }
+
+                                if (!isStaticObject && nameMap.ContainsKey(nameValue))
+                                {
+                                    obj["name"] = nameMap[nameValue];
+                                }
                             }
                         }
-                        // Replace names in "id" property values
+                        // Replace IDs in "id" property values
                         else if (property.Key == "id" && property.Value is JsonValue idValue && enableIdReplacement)
                         {
                             if (idValue.TryGetValue<string>(out string? idValueString) && idValueString != null)
                             {
-                                string newId = GetOrCreateShortId(idValueString);
-                                obj["id"] = newId;
+                                if (nameMap.ContainsKey(idValueString))
+                                {
+                                    obj["id"] = nameMap[idValueString];
+                                }
                             }
                         }
-                        // Handle arrays that might contain name strings
-                        else if (property.Value is JsonArray array)
+                        // Handle single ID reference properties
+                        else if (singleIdReferenceProperties.Contains(property.Key) && property.Value is JsonValue singleRefValue)
+                        {
+                            if (singleRefValue.TryGetValue<string>(out string? refId) && refId != null)
+                            {
+                                if (nameMap.ContainsKey(refId))
+                                {
+                                    obj[property.Key] = nameMap[refId];
+                                }
+                            }
+                        }
+                        // Handle array ID reference properties
+                        else if (arrayIdReferenceProperties.Contains(property.Key) && property.Value is JsonArray refArray)
+                        {
+                            for (int i = 0; i < refArray.Count; i++)
+                            {
+                                if (refArray[i] is JsonValue arrayValue && arrayValue.TryGetValue<string>(out string? arrayRefId) && arrayRefId != null)
+                                {
+                                    if (nameMap.ContainsKey(arrayRefId))
+                                    {
+                                        refArray[i] = nameMap[arrayRefId];
+                                    }
+                                }
+                            }
+                        }
+                        // Handle regular arrays (that might contain objects)
+                        else if (property.Value is JsonArray array && !arrayIdReferenceProperties.Contains(property.Key))
                         {
                             for (int i = 0; i < array.Count; i++)
                             {
-                                if (array[i] is JsonValue arrayValue && arrayValue.TryGetValue<string>(out string? arrayStringValue) && arrayStringValue != null)
-                                {
-                                    // Replace names/IDs in array string values (like InfantrySpawns)
-                                    string newValue = arrayStringValue;
-                                    if (enableNameReplacement || enableIdReplacement)
-                                    {
-                                        // These could be IDs or names, try ID replacement first, then name replacement
-                                        if (enableIdReplacement)
-                                            newValue = GetOrCreateShortId(newValue);
-                                        else if (enableNameReplacement)
-                                            newValue = ReplaceNamesInString(newValue);
-                                    }
-                                    array[i] = newValue;
-                                }
-                                else
-                                {
-                                    // Recursively process array elements
-                                    ReplaceNamesRecursively(array[i]);
-                                }
+                                ReplaceReferencesRecursively(array[i]);
                             }
                         }
                         else
                         {
                             // Recursively process nested objects
-                            ReplaceNamesRecursively(property.Value);
+                            ReplaceReferencesRecursively(property.Value);
                         }
                     }
                     break;
 
                 case JsonArray array:
-                    // Handle arrays
                     for (int i = 0; i < array.Count; i++)
                     {
-                        ReplaceNamesRecursively(array[i]);
+                        ReplaceReferencesRecursively(array[i]);
                     }
                     break;
             }
@@ -353,7 +500,7 @@ namespace JsonMinifier
         private static string GetOrCreateShortName(string originalName)
         {
             // Don't replace names that are in the exclusion list
-            if (excludedNames.Contains(originalName))
+            if (IsExcluded(originalName))
                 return originalName;
 
             if (nameMap.ContainsKey(originalName))
@@ -377,35 +524,13 @@ namespace JsonMinifier
             return result;
         }
 
-        private static string ReplaceNamesInString(string input)
-        {
-            if (string.IsNullOrEmpty(input))
-                return input;
-
-            string result = input;
-
-            // Replace known names in the string (for IDs and references that contain names)
-            foreach (var kvp in nameMap)
-            {
-                result = result.Replace(kvp.Key, kvp.Value);
-            }
-
-            // Also handle cases where the entire string is a name that needs replacing
-            if (nameMap.ContainsKey(input))
-            {
-                return nameMap[input];
-            }
-
-            return result;
-        }
-
         private static string GetOrCreateShortId(string originalId)
         {
             if (string.IsNullOrEmpty(originalId))
                 return originalId;
 
             // Don't replace IDs that are in the exclusion list
-            if (excludedNames.Contains(originalId))
+            if (IsExcluded(originalId))
                 return originalId;
 
             // Check if we already have a mapping for this ID
@@ -421,7 +546,7 @@ namespace JsonMinifier
                 for (int i = 0; i < parts.Length; i++)
                 {
                     // Check if this part is excluded
-                    if (excludedNames.Contains(parts[i]))
+                    if (IsExcluded(parts[i]))
                     {
                         newParts[i] = parts[i]; // Keep the original
                     }
