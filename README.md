@@ -1,2 +1,2 @@
-# PortalSpacialMinifier
-CLI Tool to reduce the size of portal spacial json files.
+# Portal Spatial Minifier
+CLI Tool to reduce the size of Battlefield 6 portal spatial json files.
