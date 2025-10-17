@@ -3,10 +3,27 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace JsonMinifier
 {
+    [JsonSerializable(typeof(JsonNode))]
+    [JsonSourceGenerationOptions(
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+    internal partial class JsonMinifierContext : JsonSerializerContext
+    {
+    }
+
+    [JsonSerializable(typeof(JsonNode))]
+    [JsonSourceGenerationOptions(
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+    internal partial class JsonFormattedContext : JsonSerializerContext
+    {
+    }
+
     class Program
     {
         private static Dictionary<string, string> nameMap = new Dictionary<string, string>();
@@ -67,13 +84,16 @@ namespace JsonMinifier
                 }
 
                 // Serialize with configurable formatting
-                var options = new JsonSerializerOptions
+                // Serialize using the appropriate context based on formatting preference
+                string minifiedJson;
+                if (useFormattedOutput)
                 {
-                    WriteIndented = useFormattedOutput,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                };
-
-                string minifiedJson = JsonSerializer.Serialize(rootNode, options);
+                    minifiedJson = JsonSerializer.Serialize(rootNode, JsonFormattedContext.Default.JsonNode);
+                }
+                else
+                {
+                    minifiedJson = JsonSerializer.Serialize(rootNode, JsonMinifierContext.Default.JsonNode);
+                }
 
                 // Reduce numeric precision in the final JSON string (if enabled)
                 string finalJson = minifiedJson;
