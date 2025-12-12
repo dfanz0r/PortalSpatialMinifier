@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -82,7 +83,8 @@ namespace JsonMinifier
             "InfantrySpawnPoints_Team2",
             "SpawnPoints",
             "CapturePoints",
-            "MCOMs"
+            "MCOMs",
+            "AlternateSpawns"
         };
 
         // Settings for different optimization features
@@ -124,11 +126,11 @@ namespace JsonMinifier
                 if (enableNameIdReplacement)
                 {
                     Console.WriteLine("Replacing names and IDs with short identifiers...");
-                    
+
                     // Two-pass approach:
                     // Pass 1: Collect all names and IDs to build the complete mapping
                     CollectNamesAndIds(rootNode);
-                    
+
                     // Pass 2: Replace all references using the complete mapping
                     ReplaceReferencesRecursively(rootNode);
                 }
@@ -139,7 +141,7 @@ namespace JsonMinifier
                 {
                     // Serialize with formatted context (default 2-space indentation)
                     string tempJson = JsonSerializer.Serialize(rootNode, JsonFormattedContext.Default.JsonNode);
-                    
+
                     // Convert 2-space indentation to 4-space indentation
                     minifiedJson = ConvertToFourSpaceIndentation(tempJson);
                 }
@@ -193,12 +195,12 @@ namespace JsonMinifier
         private static string ConvertToFourSpaceIndentation(string json)
         {
             var lines = json.Split('\n');
-            
+
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i];
                 int leadingSpaces = 0;
-                
+
                 // Count leading spaces
                 for (int j = 0; j < line.Length; j++)
                 {
@@ -207,7 +209,7 @@ namespace JsonMinifier
                     else
                         break;
                 }
-                
+
                 // If we have leading spaces that are multiples of 2, convert to multiples of 4
                 if (leadingSpaces > 0 && leadingSpaces % 2 == 0)
                 {
@@ -216,7 +218,7 @@ namespace JsonMinifier
                     lines[i] = newIndent + line.Substring(leadingSpaces);
                 }
             }
-            
+
             return string.Join('\n', lines);
         }
 
@@ -372,7 +374,7 @@ namespace JsonMinifier
                                 GetOrCreateShortId(idValueString);
                             }
                         }
-                        
+
                         // Recursively collect from nested structures
                         CollectNamesAndIds(property.Value);
                     }
@@ -568,13 +570,14 @@ namespace JsonMinifier
                 @"-?\d+\.\d+",
                 match =>
                 {
-                    if (double.TryParse(match.Value, out double value))
+                    // JSON numbers always use '.' as decimal separator; parse/format invariantly
+                    if (double.TryParse(match.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
                     {
                         // Round to the specified number of significant digits
                         double rounded = Math.Round(value, maxDigits);
 
                         // Convert back to string, removing unnecessary trailing zeros
-                        string result = rounded.ToString($"G{maxDigits}");
+                        string result = rounded.ToString($"G{maxDigits}", CultureInfo.InvariantCulture);
 
                         // Ensure we don't have more decimal places than needed
                         if (result.Contains('.'))
