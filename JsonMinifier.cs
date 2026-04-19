@@ -58,8 +58,10 @@ namespace JsonMinifier
         {
             "HQArea",
             "CombatVolume",
+            "ExclusionVolume",
             "SurroundingVolume",
             "CaptureArea",
+            "AdditionalCaptureArea",
             "Area",
             "SurroundingCombatArea",
             "ExclusionAreaTeam1",
@@ -72,7 +74,10 @@ namespace JsonMinifier
             "RetreatArea",
             "RetreatFromArea",
             "AdvanceFromArea",
-            "AdvanceToArea"
+            "AdvanceToArea",
+            "HardRestrictOBB",
+            "RestrictShapeData"
+
         };
 
         // Properties that contain arrays of ID references to other objects
