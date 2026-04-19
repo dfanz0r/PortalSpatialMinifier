@@ -1,6 +1,8 @@
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectFile = Join-Path $ScriptRoot "JsonMinifier.csproj"
 $AppName   = "JsonMinifier"
-$BuildRoot = ".\bin\build"
-$DistRoot  = ".\bin\dist"
+$BuildRoot = Join-Path $ScriptRoot "bin\build"
+$DistRoot  = Join-Path $ScriptRoot "bin\dist"
 
 $Builds = @(
     @{ Rid = "win-x64";        Extra = @() },
@@ -30,6 +32,7 @@ foreach ($build in $Builds) {
 
     $dotnetArgs = @(
         "publish",
+        $ProjectFile,
         "-c", "Release",
         "-r", $rid,
         "/p:DebugType=None",
