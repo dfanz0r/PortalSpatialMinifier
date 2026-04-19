@@ -58,6 +58,7 @@ namespace JsonMinifier
         {
             "HQArea",
             "CombatVolume",
+            "SurroundingVolume",
             "CaptureArea",
             "Area",
             "SurroundingCombatArea",
