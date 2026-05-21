@@ -96,6 +96,7 @@ namespace JsonMinifier
         // Settings for different optimization features
         private static bool enableNameIdReplacement = true;
         private static bool enablePrecisionReduction = true;
+        private static bool enableMetadataStripping = true;
         private static bool showNameMappings = false;
         private static bool useFormattedOutput = false;
         private static int precisionDigits = 6;
@@ -126,6 +127,13 @@ namespace JsonMinifier
                 if (rootNode == null)
                 {
                     throw new InvalidOperationException("Failed to parse JSON content");
+                }
+
+                // Remove exporter metadata properties (if enabled)
+                if (enableMetadataStripping)
+                {
+                    Console.WriteLine("Stripping metadata properties...");
+                    StripMetadataProperties(rootNode);
                 }
 
                 // Replace names and IDs recursively (if enabled)
@@ -250,6 +258,11 @@ namespace JsonMinifier
                         Console.WriteLine("Precision reduction disabled");
                         break;
 
+                    case "--no-metadata-strip":
+                        enableMetadataStripping = false;
+                        Console.WriteLine("Metadata stripping disabled");
+                        break;
+
                     case "--show-mappings":
                         showNameMappings = true;
                         break;
@@ -341,6 +354,7 @@ namespace JsonMinifier
             Console.WriteLine("  --out FILE           Output JSON file (default: auto-generated from input filename)");
             Console.WriteLine("  --no-rename          Disable name and ID replacement with short identifiers");
             Console.WriteLine("  --no-precision       Disable numeric precision reduction");
+            Console.WriteLine("  --no-metadata-strip  Keep exporter metadata/* properties");
             Console.WriteLine("  --precision DIGITS   Set precision digits (1-15, default: 6)");
             Console.WriteLine("  --show-mappings      Show name/ID mappings in output");
             Console.WriteLine("  --formatted, --pretty Output with whitespace and indentation (default: minified)");
@@ -351,6 +365,45 @@ namespace JsonMinifier
             Console.WriteLine("  JsonMinifier --no-rename --precision 3 input.json");
             Console.WriteLine("  JsonMinifier --formatted --show-mappings input.json");
             Console.WriteLine("  JsonMinifier --show-mappings --precision 7 -i input.json --out output.json");
+        }
+
+        // Remove exporter metadata properties from spatial objects
+        private static void StripMetadataProperties(JsonNode? node)
+        {
+            if (node == null)
+                return;
+
+            switch (node)
+            {
+                case JsonObject obj:
+                    bool isSpatialObject = obj.ContainsKey("name") && obj.ContainsKey("type");
+                    var metadataKeys = new List<string>();
+
+                    foreach (var property in obj)
+                    {
+                        if (isSpatialObject && property.Key.StartsWith("metadata/", StringComparison.Ordinal))
+                        {
+                            metadataKeys.Add(property.Key);
+                        }
+                        else
+                        {
+                            StripMetadataProperties(property.Value);
+                        }
+                    }
+
+                    foreach (string key in metadataKeys)
+                    {
+                        obj.Remove(key);
+                    }
+                    break;
+
+                case JsonArray array:
+                    for (int i = 0; i < array.Count; i++)
+                    {
+                        StripMetadataProperties(array[i]);
+                    }
+                    break;
+            }
         }
 
         // Pass 1: Collect all names and IDs to build the complete mapping
