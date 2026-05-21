@@ -97,9 +97,14 @@ namespace JsonMinifier
         private static bool enableNameIdReplacement = true;
         private static bool enablePrecisionReduction = true;
         private static bool enableMetadataStripping = true;
+        private static bool enableColorStripping = true;
+        private static bool useKeyedPrecisionReduction = true;
         private static bool showNameMappings = false;
         private static bool useFormattedOutput = false;
         private static int precisionDigits = 6;
+        private static int positionPrecisionDigits = 3;
+        private static int basisPrecisionDigits = 6;
+        private static int pointsPrecisionDigits = 3;
 
         static void Main(string[] args)
         {
@@ -129,11 +134,11 @@ namespace JsonMinifier
                     throw new InvalidOperationException("Failed to parse JSON content");
                 }
 
-                // Remove exporter metadata properties (if enabled)
-                if (enableMetadataStripping)
+                // Remove exporter/editor-only properties (if enabled)
+                if (enableMetadataStripping || enableColorStripping)
                 {
-                    Console.WriteLine("Stripping metadata properties...");
-                    StripMetadataProperties(rootNode);
+                    Console.WriteLine("Stripping editor-only properties...");
+                    StripEditorOnlyProperties(rootNode);
                 }
 
                 // Replace names and IDs recursively (if enabled)
@@ -147,6 +152,13 @@ namespace JsonMinifier
 
                     // Pass 2: Replace all references using the complete mapping
                     ReplaceReferencesRecursively(rootNode);
+                }
+
+                // Reduce numeric precision directly on known spatial keys (if enabled)
+                if (enablePrecisionReduction && useKeyedPrecisionReduction)
+                {
+                    Console.WriteLine($"Reducing numeric precision by key (position={positionPrecisionDigits}, right/up/front={basisPrecisionDigits}, points={pointsPrecisionDigits} decimal places)...");
+                    ReduceNumericPrecisionByKey(rootNode);
                 }
 
                 // Serialize with configurable formatting
@@ -164,9 +176,9 @@ namespace JsonMinifier
                     minifiedJson = JsonSerializer.Serialize(rootNode, JsonMinifierContext.Default.JsonNode);
                 }
 
-                // Reduce numeric precision in the final JSON string (if enabled)
+                // Reduce numeric precision in the final JSON string using the legacy regex mode (if enabled)
                 string finalJson = minifiedJson;
-                if (enablePrecisionReduction)
+                if (enablePrecisionReduction && !useKeyedPrecisionReduction)
                 {
                     Console.WriteLine($"Reducing numeric precision to {precisionDigits} digits...");
                     finalJson = ReduceNumericPrecision(minifiedJson, precisionDigits);
@@ -236,6 +248,29 @@ namespace JsonMinifier
             return string.Join('\n', lines);
         }
 
+        private static void EnableKeyedPrecisionReduction()
+        {
+            if (!useKeyedPrecisionReduction)
+            {
+                useKeyedPrecisionReduction = true;
+                Console.WriteLine("Keyed precision reduction enabled");
+            }
+        }
+
+        private static void ParseDecimalPlacesArgument(string[] args, ref int index, ref int target, string label)
+        {
+            if (index + 1 < args.Length && int.TryParse(args[index + 1], out int digits) && digits >= 0 && digits <= 15)
+            {
+                target = digits;
+                index++; // Skip the next argument as we've consumed it
+                Console.WriteLine($"{label} precision set to {target} decimal places");
+            }
+            else
+            {
+                Console.WriteLine($"Invalid {label} precision value. Using current value ({target}).");
+            }
+        }
+
         private static void ParseArguments(string[] args, ref string inputFile, ref string? outputFile)
         {
             for (int i = 0; i < args.Length; i++)
@@ -263,6 +298,33 @@ namespace JsonMinifier
                         Console.WriteLine("Metadata stripping disabled");
                         break;
 
+                    case "--no-color-strip":
+                        enableColorStripping = false;
+                        Console.WriteLine("Color stripping disabled");
+                        break;
+
+                    case "--keyed-precision":
+                    case "--structured-precision":
+                        EnableKeyedPrecisionReduction();
+                        break;
+
+                    case "--position-precision":
+                        EnableKeyedPrecisionReduction();
+                        ParseDecimalPlacesArgument(args, ref i, ref positionPrecisionDigits, "Position");
+                        break;
+
+                    case "--basis-precision":
+                    case "--orientation-precision":
+                        EnableKeyedPrecisionReduction();
+                        ParseDecimalPlacesArgument(args, ref i, ref basisPrecisionDigits, "Right/up/front vector");
+                        break;
+
+                    case "--points-precision":
+                    case "--point-precision":
+                        EnableKeyedPrecisionReduction();
+                        ParseDecimalPlacesArgument(args, ref i, ref pointsPrecisionDigits, "Points");
+                        break;
+
                     case "--show-mappings":
                         showNameMappings = true;
                         break;
@@ -274,11 +336,12 @@ namespace JsonMinifier
                         break;
 
                     case "--precision":
+                        useKeyedPrecisionReduction = false;
                         if (i + 1 < args.Length && int.TryParse(args[i + 1], out int digits) && digits > 0 && digits <= 15)
                         {
                             precisionDigits = digits;
                             i++; // Skip the next argument as we've consumed it
-                            Console.WriteLine($"Precision set to {precisionDigits} digits");
+                            Console.WriteLine($"Legacy regex precision set to {precisionDigits} digits");
                         }
                         else
                         {
@@ -355,20 +418,26 @@ namespace JsonMinifier
             Console.WriteLine("  --no-rename          Disable name and ID replacement with short identifiers");
             Console.WriteLine("  --no-precision       Disable numeric precision reduction");
             Console.WriteLine("  --no-metadata-strip  Keep exporter metadata/* properties");
-            Console.WriteLine("  --precision DIGITS   Set precision digits (1-15, default: 6)");
+            Console.WriteLine("  --no-color-strip     Keep Godot-only color properties");
+            Console.WriteLine("  --precision DIGITS   Use legacy full-file regex precision (default: 6)");
+            Console.WriteLine("  --keyed-precision    Use schema-aware precision mode (default)");
+            Console.WriteLine("  --position-precision DIGITS  Decimal places for position x/y/z in keyed mode (0-15, default: 3)");
+            Console.WriteLine("  --basis-precision DIGITS     Decimal places for right/up/front x/y/z in keyed mode (0-15, default: 6)");
+            Console.WriteLine("  --points-precision DIGITS    Decimal places for volume points x/y/z in keyed mode (0-15, default: 3)");
             Console.WriteLine("  --show-mappings      Show name/ID mappings in output");
             Console.WriteLine("  --formatted, --pretty Output with whitespace and indentation (default: minified)");
             Console.WriteLine();
             Console.WriteLine("Examples:");
             Console.WriteLine("  JsonMinifier input.json");
             Console.WriteLine("  JsonMinifier --out custom-output.json input.json");
-            Console.WriteLine("  JsonMinifier --no-rename --precision 3 input.json");
+            Console.WriteLine("  JsonMinifier --points-precision 3 input.json");
             Console.WriteLine("  JsonMinifier --formatted --show-mappings input.json");
+            Console.WriteLine("  JsonMinifier --precision 6 input.json");
             Console.WriteLine("  JsonMinifier --show-mappings --precision 7 -i input.json --out output.json");
         }
 
-        // Remove exporter metadata properties from spatial objects
-        private static void StripMetadataProperties(JsonNode? node)
+        // Remove exporter/editor-only properties from spatial objects
+        private static void StripEditorOnlyProperties(JsonNode? node)
         {
             if (node == null)
                 return;
@@ -377,21 +446,24 @@ namespace JsonMinifier
             {
                 case JsonObject obj:
                     bool isSpatialObject = obj.ContainsKey("name") && obj.ContainsKey("type");
-                    var metadataKeys = new List<string>();
+                    var keysToRemove = new List<string>();
 
                     foreach (var property in obj)
                     {
-                        if (isSpatialObject && property.Key.StartsWith("metadata/", StringComparison.Ordinal))
+                        bool shouldStripMetadata = enableMetadataStripping && property.Key.StartsWith("metadata/", StringComparison.Ordinal);
+                        bool shouldStripColor = enableColorStripping && property.Key == "color";
+
+                        if (isSpatialObject && (shouldStripMetadata || shouldStripColor))
                         {
-                            metadataKeys.Add(property.Key);
+                            keysToRemove.Add(property.Key);
                         }
                         else
                         {
-                            StripMetadataProperties(property.Value);
+                            StripEditorOnlyProperties(property.Value);
                         }
                     }
 
-                    foreach (string key in metadataKeys)
+                    foreach (string key in keysToRemove)
                     {
                         obj.Remove(key);
                     }
@@ -400,7 +472,7 @@ namespace JsonMinifier
                 case JsonArray array:
                     for (int i = 0; i < array.Count; i++)
                     {
-                        StripMetadataProperties(array[i]);
+                        StripEditorOnlyProperties(array[i]);
                     }
                     break;
             }
@@ -620,6 +692,73 @@ namespace JsonMinifier
             // Otherwise, create a new short identifier for this ID
             string shortId = GetOrCreateShortName(originalId);
             return shortId;
+        }
+
+        private static void ReduceNumericPrecisionByKey(JsonNode? node, string? currentKey = null)
+        {
+            if (node == null)
+                return;
+
+            switch (node)
+            {
+                case JsonObject obj:
+                    ApplyKeyedPrecision(obj, currentKey);
+
+                    foreach (var property in obj)
+                    {
+                        ReduceNumericPrecisionByKey(property.Value, property.Key);
+                    }
+                    break;
+
+                case JsonArray array:
+                    for (int i = 0; i < array.Count; i++)
+                    {
+                        // Keep the array's property key as context so points[*] gets point precision.
+                        ReduceNumericPrecisionByKey(array[i], currentKey);
+                    }
+                    break;
+            }
+        }
+
+        private static void ApplyKeyedPrecision(JsonObject obj, string? currentKey)
+        {
+            int? decimalPlaces = currentKey switch
+            {
+                "position" => positionPrecisionDigits,
+                "right" or "up" or "front" => basisPrecisionDigits,
+                "points" => pointsPrecisionDigits,
+                _ => null
+            };
+
+            if (decimalPlaces.HasValue)
+            {
+                RoundNumericProperty(obj, "x", decimalPlaces.Value);
+                RoundNumericProperty(obj, "y", decimalPlaces.Value);
+                RoundNumericProperty(obj, "z", decimalPlaces.Value);
+            }
+
+            // ObjId values are identifiers encoded as numbers in the spatial schema.
+            // They do not need fractional precision.
+            RoundNumericProperty(obj, "ObjId", 0);
+        }
+
+        private static void RoundNumericProperty(JsonObject obj, string propertyName, int decimalPlaces)
+        {
+            if (!obj.TryGetPropertyValue(propertyName, out JsonNode? node) || node is not JsonValue valueNode)
+                return;
+
+            if (!valueNode.TryGetValue<double>(out double value))
+                return;
+
+            double rounded = Math.Round(value, decimalPlaces, MidpointRounding.AwayFromZero);
+
+            // Avoid serializing tiny negative values as -0.
+            if (rounded == 0)
+            {
+                rounded = 0;
+            }
+
+            obj[propertyName] = JsonValue.Create(rounded);
         }
 
         private static string ReduceNumericPrecision(string json, int maxDigits)
